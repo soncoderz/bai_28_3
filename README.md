@@ -15,18 +15,16 @@ Set cac bien moi truong truoc khi chay:
 
 ```bash
 MONGODB_URI=mongodb://localhost:27017/NNPTUD-C4
-MAILTRAP_USER=your_mailtrap_username
-MAILTRAP_PASS=your_mailtrap_password
-MAIL_FROM=admin@haha.com
+SENDGRID_API_KEY=your_sendgrid_api_key
+SENDGRID_FROM_EMAIL=your_verified_sender@example.com
 ```
 
 Co the set tren PowerShell:
 
 ```powershell
 $env:MONGODB_URI="mongodb://localhost:27017/NNPTUD-C4"
-$env:MAILTRAP_USER="your_mailtrap_username"
-$env:MAILTRAP_PASS="your_mailtrap_password"
-$env:MAIL_FROM="admin@haha.com"
+$env:SENDGRID_API_KEY="your_sendgrid_api_key"
+$env:SENDGRID_FROM_EMAIL="your_verified_sender@example.com"
 npm start
 ```
 
@@ -54,4 +52,4 @@ Ket qua import:
 - role mac dinh `user`
 - password duoc random 16 ky tu
 - tao cart cho moi user moi
-- gui email password qua Mailtrap/SMTP
+- gui email password qua SendGrid

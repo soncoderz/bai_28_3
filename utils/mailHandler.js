@@ -1,49 +1,50 @@
-const nodemailer = require("nodemailer");
-
-const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST || process.env.MAILTRAP_HOST || "sandbox.smtp.mailtrap.io",
-    port: Number(process.env.SMTP_PORT || process.env.MAILTRAP_PORT || 2525),
-    secure: false,
-    auth: {
-        user: process.env.SMTP_USER || process.env.MAILTRAP_USER || "",
-        pass: process.env.SMTP_PASS || process.env.MAILTRAP_PASS || "",
-    },
-});
+const sgMail = require('@sendgrid/mail');
 
 function getMailFrom() {
-    return process.env.MAIL_FROM || "admin@haha.com";
+    return process.env.SENDGRID_FROM_EMAIL || process.env.MAIL_FROM || 'nguyenhoanglan5000@gmail.com';
 }
 
 function ensureMailConfig() {
-    if (!transporter.options.auth.user || !transporter.options.auth.pass) {
-        throw new Error("Mailtrap chua duoc cau hinh. Hay set MAILTRAP_USER va MAILTRAP_PASS");
+    if (!process.env.SENDGRID_API_KEY) {
+        throw new Error('SendGrid chua duoc cau hinh. Hay set SENDGRID_API_KEY');
     }
+    if (!getMailFrom()) {
+        throw new Error('SendGrid chua co email gui. Hay set SENDGRID_FROM_EMAIL');
+    }
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
+
+async function sendMessage(message) {
+    ensureMailConfig();
+    const [response] = await sgMail.send(message);
+    const messageId = response.headers['x-message-id'] || response.headers['X-Message-Id'] || null;
+    const info = {
+        statusCode: response.statusCode,
+        messageId: messageId
+    };
+    console.log('Message sent:', info.messageId || info.statusCode);
+    return info;
 }
 
 module.exports = {
     verifyMailTransport: async () => {
         ensureMailConfig();
-        await transporter.verify();
+        return true;
     },
     sendMail: async (to, url) => {
-        ensureMailConfig();
-        const info = await transporter.sendMail({
-            from: getMailFrom(),
+        return await sendMessage({
             to: to,
-            subject: "RESET PASSWORD REQUEST",
+            from: getMailFrom(),
+            subject: 'RESET PASSWORD REQUEST',
             text: `Click vao link sau de doi mat khau: ${url}`,
             html: `Click vao <a href="${url}">day</a> de doi mat khau`,
         });
-
-        console.log("Message sent:", info.messageId);
-        return info;
     },
     sendInitialPasswordMail: async (to, username, password) => {
-        ensureMailConfig();
-        const info = await transporter.sendMail({
-            from: getMailFrom(),
+        return await sendMessage({
             to: to,
-            subject: "THONG TIN TAI KHOAN MOI",
+            from: getMailFrom(),
+            subject: 'THONG TIN TAI KHOAN MOI',
             text: `Tai khoan cua ban da duoc tao.\nUsername: ${username}\nPassword: ${password}`,
             html: `
                 <p>Tai khoan cua ban da duoc tao.</p>
@@ -52,8 +53,5 @@ module.exports = {
                 <p>Hay dang nhap va doi mat khau sau khi nhan duoc email nay.</p>
             `,
         });
-
-        console.log("Message sent:", info.messageId);
-        return info;
     }
 }
