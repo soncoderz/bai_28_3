@@ -8,29 +8,26 @@ const { ChangePasswordValidator, validatedResult } = require('../utils/validator
 let crypto = require('crypto')
 let { sendMail } = require('../utils/mailHandler')
 let cartModel = require('../schemas/carts');
-let mongoose = require('mongoose')
 let { getOrCreateRoleByName } = require('../utils/roleHandler')
+let { executeWithOptionalTransaction, getSaveOptions } = require('../utils/transactionHandler');
 
 router.post('/register', async function (req, res, next) {
-    let session = await mongoose.startSession();
-    session.startTransaction()
     try {
-        let { username, password, email } = req.body;
-        let userRole = await getOrCreateRoleByName('user', session);
-        let newUser = await userController.CreateAnUser(username, password, email,
-            userRole._id, session
-        )
-        let newCArt = new cartModel({
-            user: newUser._id
-        })
-        await newCArt.save({ session });
-        await newCArt.populate('user')
-        await session.commitTransaction();
-        await session.endSession()
+        let newCArt = await executeWithOptionalTransaction(async function (session) {
+            let { username, password, email } = req.body;
+            let userRole = await getOrCreateRoleByName('user', session);
+            let newUser = await userController.CreateAnUser(username, password, email,
+                userRole._id, session
+            )
+            let newCArt = new cartModel({
+                user: newUser._id
+            })
+            await newCArt.save(getSaveOptions(session));
+            await newCArt.populate('user')
+            return newCArt;
+        });
         res.send(newCArt)
     } catch (error) {
-        await session.abortTransaction();
-        await session.endSession()
         res.status(404).send({
             message: error.message
         })

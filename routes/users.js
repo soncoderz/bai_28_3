@@ -3,12 +3,13 @@ var router = express.Router();
 let exceljs = require('exceljs');
 let path = require('path');
 let crypto = require('crypto');
-let mongoose = require('mongoose');
+let fs = require('fs/promises');
 let { validatedResult, CreateAnUserValidator, ModifyAnUserValidator } = require('../utils/validator');
 let { uploadExcel } = require('../utils/uploadHandler');
 let { CheckLogin, CheckRole } = require('../utils/authHandler');
 let { sendInitialPasswordMail, verifyMailTransport } = require('../utils/mailHandler');
 let { getOrCreateRoleByName } = require('../utils/roleHandler');
+let { executeWithOptionalTransaction, getSaveOptions } = require('../utils/transactionHandler');
 let userModel = require("../schemas/users");
 let cartModel = require('../schemas/carts');
 let userController = require('../controllers/users');
@@ -86,32 +87,29 @@ router.get("/:id", async function (req, res, next) {
 });
 
 router.post("/", CreateAnUserValidator, validatedResult, async function (req, res, next) {
-    let session = await mongoose.startSession();
-    session.startTransaction();
     try {
-        let newItem = await userController.CreateAnUser(
-            req.body.username,
-            req.body.password,
-            req.body.email,
-            req.body.role,
-            session,
-            req.body.fullName,
-            req.body.avatarUrl,
-            req.body.status,
-            req.body.loginCount
-        );
-        let newCart = new cartModel({
-            user: newItem._id
+        let newItem = await executeWithOptionalTransaction(async function (session) {
+            let newItem = await userController.CreateAnUser(
+                req.body.username,
+                req.body.password,
+                req.body.email,
+                req.body.role,
+                session,
+                req.body.fullName,
+                req.body.avatarUrl,
+                req.body.status,
+                req.body.loginCount
+            );
+            let newCart = new cartModel({
+                user: newItem._id
+            });
+            await newCart.save(getSaveOptions(session));
+            await newItem.populate('role');
+            return newItem;
         });
-        await newCart.save({ session });
-        await session.commitTransaction();
-        await newItem.populate('role');
         res.send(newItem);
     } catch (err) {
-        await session.abortTransaction();
         res.status(400).send({ message: err.message });
-    } finally {
-        await session.endSession();
     }
 });
 
@@ -121,7 +119,7 @@ router.post("/import", uploadExcel.single('file'), async function (req, res, nex
 
     try {
         if (!req.file) {
-            res.status(404).send({
+            res.status(400).send({
                 message: "file khong duoc de trong"
             });
             return;
@@ -205,27 +203,26 @@ router.post("/import", uploadExcel.single('file'), async function (req, res, nex
                 continue;
             }
 
-            let password = generateRandomPassword(16);
-            let session = await mongoose.startSession();
-            session.startTransaction();
-
             try {
-                let newUser = await userController.CreateAnUser(
-                    username,
-                    password,
-                    email,
-                    userRole._id,
-                    session,
-                    '',
-                    undefined,
-                    false,
-                    0
-                );
-                let newCart = new cartModel({
-                    user: newUser._id
+                let password = generateRandomPassword(16);
+                let newUser = await executeWithOptionalTransaction(async function (session) {
+                    let newUser = await userController.CreateAnUser(
+                        username,
+                        password,
+                        email,
+                        userRole._id,
+                        session,
+                        '',
+                        undefined,
+                        false,
+                        0
+                    );
+                    let newCart = new cartModel({
+                        user: newUser._id
+                    });
+                    await newCart.save(getSaveOptions(session));
+                    return newUser;
                 });
-                await newCart.save({ session });
-                await session.commitTransaction();
 
                 usernameSet.add(username.toLowerCase());
                 emailSet.add(email);
@@ -251,7 +248,6 @@ router.post("/import", uploadExcel.single('file'), async function (req, res, nex
                     });
                 }
             } catch (error) {
-                await session.abortTransaction();
                 results.push({
                     row: rowIndex,
                     username: username,
@@ -259,8 +255,6 @@ router.post("/import", uploadExcel.single('file'), async function (req, res, nex
                     status: 'failed',
                     errors: [error.message]
                 });
-            } finally {
-                await session.endSession();
             }
         }
 
@@ -280,6 +274,10 @@ router.post("/import", uploadExcel.single('file'), async function (req, res, nex
         res.status(400).send({
             message: error.message
         });
+    } finally {
+        if (pathFile) {
+            await fs.unlink(pathFile).catch(function () { });
+        }
     }
 });
 

@@ -12,7 +12,7 @@ module.exports = {
             role: role,
             loginCount: loginCount
         });
-        await newItem.save({ session });
+        await newItem.save(session ? { session } : undefined);
         return newItem;
     },
     GetAnUserByUsername: async function (username) {

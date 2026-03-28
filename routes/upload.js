@@ -6,8 +6,8 @@ let path = require('path')
 let categoriesModel = require('../schemas/categories')
 let productModel = require('../schemas/products')
 let inventoryModel = require('../schemas/inventories')
-let mongoose = require('mongoose');
 let slugify = require('slugify')
+let { executeWithOptionalTransaction, getSaveOptions } = require('../utils/transactionHandler');
 //client ->upload->save
 
 router.post('/one_file', uploadImage.single('file'), function (req, res, next) {
@@ -93,36 +93,33 @@ router.post('/excel', uploadExcel.single('file'), async function (req, res, next
                 result.push(errorsInRow);
                 continue
             }
-            let session = await mongoose.startSession()
-            session.startTransaction()
             try {
-                let newProduct = new productModel({
-                    sku: sku,
-                    title: title,
-                    slug: slugify(title, {
-                        replacement: '-',
-                        remove: undefined,
-                        lower: true
-                    }),
-                    price: price,
-                    description: title,
-                    category: categoriesMap.get(category)
-                })
-                await newProduct.save({ session })
-                let newInventory = new inventoryModel({
-                    product: newProduct._id,
-                    stock: stock
-                })
-                await newInventory.save({ session });
-                await newInventory.populate('product')
-                await session.commitTransaction();
-                await session.endSession()
+                let newInventory = await executeWithOptionalTransaction(async function (session) {
+                    let newProduct = new productModel({
+                        sku: sku,
+                        title: title,
+                        slug: slugify(title, {
+                            replacement: '-',
+                            remove: undefined,
+                            lower: true
+                        }),
+                        price: price,
+                        description: title,
+                        category: categoriesMap.get(category)
+                    })
+                    await newProduct.save(getSaveOptions(session))
+                    let newInventory = new inventoryModel({
+                        product: newProduct._id,
+                        stock: stock
+                    })
+                    await newInventory.save(getSaveOptions(session));
+                    await newInventory.populate('product')
+                    return newInventory;
+                });
                 getTitle.push(title);
                 getSku.push(sku)
                 result.push(newInventory)
             } catch (error) {
-                await session.abortTransaction();
-                await session.endSession()
                 result.push(error.message)
             }
         }

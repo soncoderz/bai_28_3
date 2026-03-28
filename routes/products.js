@@ -8,7 +8,7 @@ const slugify = require('slugify');
 let productModel = require('../schemas/products')
 let inventoryModel = require('../schemas/inventories');
 const products = require('../schemas/products');
-let mongoose = require('mongoose')
+let { executeWithOptionalTransaction, getSaveOptions } = require('../utils/transactionHandler');
 
 /* GET users listing. */
 router.get('/', async function (req, res, next) {
@@ -51,34 +51,31 @@ router.get('/:id', async function (req, res, next) {
   }
 });
 router.post('/', async function (req, res, next) {
-  let session = await mongoose.startSession()
-  session.startTransaction()
   try {
-    let newProduct = new productModel({
-      title: req.body.title,
-      slug: slugify(req.body.title, {
-        replacement: '-',
-        remove: undefined,
-        lower: true
-      }),
-      price: req.body.price,
-      description: req.body.description,
-      images: req.body.images,
-      category: req.body.category
-    })
-    await newProduct.save({ session })
-    let newInventory = new inventoryModel({
-      product: newProduct._id,
-      stock: 0
-    })
-    await newInventory.save({ session });
-    await newInventory.populate('product')
-    await session.commitTransaction();
-    await session.endSession()
+    let newInventory = await executeWithOptionalTransaction(async function (session) {
+      let newProduct = new productModel({
+        title: req.body.title,
+        slug: slugify(req.body.title, {
+          replacement: '-',
+          remove: undefined,
+          lower: true
+        }),
+        price: req.body.price,
+        description: req.body.description,
+        images: req.body.images,
+        category: req.body.category
+      })
+      await newProduct.save(getSaveOptions(session))
+      let newInventory = new inventoryModel({
+        product: newProduct._id,
+        stock: 0
+      })
+      await newInventory.save(getSaveOptions(session));
+      await newInventory.populate('product')
+      return newInventory;
+    });
     res.send(newInventory)
   } catch (error) {
-    await session.abortTransaction();
-    await session.endSession()
     res.status(404).send(error.message)
   }
 })
